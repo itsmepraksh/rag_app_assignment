@@ -1,0 +1,1 @@
+DocuMind AI is a state-of-the-art Document Q&A system using RAG architecture. It uses LangGraph for orchestrating multi-agent workflows. It is designed to be fully local and free, using Sentence-Transformers for embeddings.
