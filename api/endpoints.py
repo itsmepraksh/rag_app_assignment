@@ -7,6 +7,8 @@ from core.graph import app_graph
 
 router = APIRouter()
 UPLOAD_DIR = "uploads"
+conversation_history = []
+MAX_HISTORY_TURNS = 20
 
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
@@ -32,8 +34,19 @@ async def upload_file(file: UploadFile = File(...)):
 @router.post("/query")
 async def query_docs(request: QueryRequest):
     try:
-        inputs = {"query": request.query, "documents": [], "response": ""}
+        recent_history = conversation_history[-3:]
+        inputs = {
+            "query": request.query,
+            "documents": [],
+            "response": "",
+            "conversation_history": recent_history,
+        }
         result = app_graph.invoke(inputs)
+        conversation_history.append(
+            {"question": request.query, "answer": result["response"]}
+        )
+        if len(conversation_history) > MAX_HISTORY_TURNS:
+            del conversation_history[:-MAX_HISTORY_TURNS]
         return {"response": result["response"], "sources": result.get("documents", [])[:3]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
