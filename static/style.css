@@ -1,3 +1,9 @@
+html,
+body {
+    height: 100%;
+    margin: 0;
+}
+
 :root {
     --primary: #6366f1;
     --primary-hover: #4f46e5;
@@ -19,10 +25,11 @@
 body {
     background-color: var(--bg-dark);
     color: var(--text-main);
+    height: 100vh;
     min-height: 100vh;
     display: flex;
     flex-direction: column;
-    overflow-x: hidden;
+    overflow: hidden;
 }
 
 .container {
@@ -30,6 +37,10 @@ body {
     margin: 0 auto;
     padding: 2rem;
     width: 100%;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
 }
 
 header {
@@ -37,7 +48,8 @@ header {
     justify-content: space-between;
     align-items: center;
     padding: 1.5rem 0;
-    margin-bottom: 2rem;
+    margin-bottom: 1rem;
+    flex-shrink: 0;
 }
 
 .logo {
@@ -45,14 +57,18 @@ header {
     font-weight: 700;
     background: linear-gradient(135deg, #818cf8, #c084fc);
     -webkit-background-clip: text;
+    background-clip: text;
     -webkit-text-fill-color: transparent;
 }
 
 .main-layout {
     display: grid;
     grid-template-columns: 350px 1fr;
+    grid-template-rows: minmax(0, 1fr);
     gap: 2rem;
-    height: calc(100vh - 180px);
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
 }
 
 .glass-card {
@@ -63,6 +79,7 @@ header {
     padding: 1.5rem;
     display: flex;
     flex-direction: column;
+    min-height: 0;
 }
 
 /* Upload Section */
@@ -103,15 +120,22 @@ header {
     display: flex;
     flex-direction: column;
     gap: 1rem;
+    min-height: 0;
+    overflow: hidden;
+    height: 100%;
+    /* Ensure it doesn't grow beyond parent */
+    max-height: 100%;
 }
 
 .messages {
     flex: 1;
     overflow-y: auto;
+    min-height: 0;
     padding-right: 0.5rem;
     display: flex;
     flex-direction: column;
     gap: 1rem;
+    overscroll-behavior: contain;
 }
 
 .message {
@@ -132,10 +156,52 @@ header {
     border: 1px solid var(--border);
 }
 
+.message.thinking {
+    opacity: 0.7;
+    padding: 1rem 1.5rem;
+}
+
+.message.thinking .dot {
+    animation: pulse 1.5s infinite;
+    font-size: 1.5rem;
+    line-height: 0.5;
+    margin: 0 1px;
+    display: inline-block;
+}
+
+.message.thinking .dot:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.message.thinking .dot:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes pulse {
+    0% {
+        opacity: 0.2;
+        transform: translateY(0);
+    }
+
+    50% {
+        opacity: 1;
+        transform: translateY(-3px);
+    }
+
+    100% {
+        opacity: 0.2;
+        transform: translateY(0);
+    }
+}
+
 .input-area {
     display: flex;
     gap: 1rem;
-    margin-top: 1rem;
+    margin-top: 0;
+    flex-shrink: 0;
+    /* Prevent input from being crushed */
+    padding-top: 0.5rem;
+    /* Visual breathing room */
 }
 
 input[type="text"] {
@@ -175,4 +241,64 @@ button:hover {
 ::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.1);
     border-radius: 10px;
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+    .container {
+        padding: 1rem;
+        height: 100vh;
+        /* Ensure full viewport height */
+    }
+
+    .main-layout {
+        display: flex;
+        /* Stack vertically */
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    /* Sidebar adjustments */
+    aside.glass-card {
+        max-height: 35vh;
+        /* Take up max 35% of screen height */
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        padding: 1rem;
+    }
+
+    .upload-area {
+        padding: 1rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .file-list {
+        display: flex;
+        /* Horizontal scroll for files to save vertical space? OR just vertical scroll */
+        flex-direction: column;
+        overflow-y: auto;
+        max-height: 15vh;
+        /* Limit inner list height */
+    }
+
+    /* Chat takes remaining space */
+    .chat-container {
+        flex: 1;
+        height: auto;
+        /* Let flex handle height */
+        max-height: none;
+        /* Override the desktop max-height if needed, though 100% usually fine. */
+        min-height: 0;
+    }
+
+    /* Adjust font sizes for mobile */
+    .logo {
+        font-size: 1.25rem;
+    }
+
+    header {
+        padding: 1rem 0;
+        margin-bottom: 0.5rem;
+    }
 }

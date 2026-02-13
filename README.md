@@ -7,7 +7,7 @@ DocuMind AI is a FastAPI-based RAG system that lets you upload PDF/TXT files and
 - Document upload (`.pdf`, `.txt`)
 - Chunking + embeddings + FAISS vector search
 - LangGraph workflow with conditional routing
-- Context-only generation using Gemini
+- Context-only generation using local Ollama
 - Citation appending (`filename`, `page`)
 - Lightweight conversation memory (last 3 turns for follow-ups)
 - Short-answer quality check with optional regeneration
@@ -37,30 +37,60 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-3. Configure environment variable in `.env`:
+3. Start Ollama and pull the model:
 
-```env
-Gemini_API_Key=your_gemini_api_key_here
+```bash
+ollama pull llama3:8b
+brew services start ollama
 ```
 
-4. Start server:
+4. Configure `.env` (no API key needed):
+
+```env
+LLM_PROVIDER=ollama
+LLM_MODEL=llama3:8b
+LLM_TIMEOUT_SECONDS=45
+```
+
+5. Start server:
 
 ```bash
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-5. Open app in browser:
+6. Open app in browser:
 
 ```text
 http://localhost:8000
 ```
 
-## Gemini API Key Setup
+You will see startup model pre-warm and inference logs in console, including retrieval chunk count and LLM latency.
 
-1. Generate a Gemini API key from Google AI Studio.
-2. Put the key in `.env`:
-   `Gemini_API_Key=...`
-3. Restart the server after updating `.env`.
+## Ollama Setup
+
+1. Install Ollama on your machine.
+2. Pull model: `ollama pull llama3:8b`
+3. Ensure Ollama service is running.
+4. Keep default host (`http://127.0.0.1:11434`) or set `OLLAMA_HOST` in `.env`.
+5. Model is configurable via `.env` using `LLM_MODEL` (default: `llama3:8b`).
+
+## Troubleshoot
+
+1. `Failed to connect to Ollama`
+- Start service: `brew services start ollama`
+- Check service: `ollama list`
+
+2. `model not found`
+- Pull model manually: `ollama pull llama3:8b`
+- Ensure `.env` model name matches pulled model
+
+3. Slow first response
+- First inference may be slower due to model load
+- App pre-warms model on startup to reduce this
+
+4. Empty or fallback answer
+- Verify documents were uploaded and chunked
+- Ask grounded questions based on uploaded text
 
 ## LangGraph Architecture Diagram
 
@@ -69,7 +99,7 @@ flowchart TD
     A["User Query"] --> B["Retriever Node<br/>FAISS Similarity Search"]
     B --> C["Validator Node<br/>Docs Found?"]
     C -->|No| Z["Fallback Response<br/>No relevant information"]
-    C -->|Yes| D["Generator Node<br/>Gemini (Context + Last 3 Turns)"]
+    C -->|Yes| D["Generator Node<br/>Ollama (Context + Last 3 Turns)"]
     D --> E["Quality Check Node<br/>Answer too short?"]
     E -->|Yes, retry limit not reached| D
     E -->|No| F["Citation Node<br/>Append filename + page"]

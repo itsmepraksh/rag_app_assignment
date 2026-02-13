@@ -1,12 +1,11 @@
 import os
+import logging
 from typing import List, TypedDict
-from dotenv import load_dotenv
-import google.generativeai as genai
 from langgraph.graph import StateGraph, END
 from core.rag import rag_manager
+from core.llm_client import generate
 
-load_dotenv()
-genai.configure(api_key=os.getenv("Gemini_API_Key"))
+logger = logging.getLogger(__name__)
 
 # State definition
 class AgentState(TypedDict):
@@ -23,6 +22,7 @@ def retriever_node(state: AgentState):
     print("--- RETRIEVING ---")
     query = state["query"]
     docs = rag_manager.query(query)
+    logger.info("retrieval query=%r chunks=%d", query[:120], len(docs))
     # Store both content and metadata
     doc_data = [
         {
@@ -54,6 +54,8 @@ def generator_node(state: AgentState):
         context_parts.append(f"Source: {source} (Page {page})\nContent: {content}")
     
     context = "\n\n---\n\n".join(context_parts)
+    context_word_count = len(context.split())
+    context_density = "LOW" if context_word_count < 220 else "HIGH"
     query = state["query"]
     recent_history = state.get("conversation_history", [])[-3:]
     history_parts = []
@@ -72,38 +74,76 @@ def generator_node(state: AgentState):
         )
 
     prompt = f"""
-    You are an advanced AI assistant. Answer the user's question based ONLY on the provided context chunks.
-    If the context doesn't contain the answer, say "I don't have enough information in the uploaded documents to answer this."
-    
-    CRITICAL INSTRUCTION: Your answer must be derived strictly from the Context below. Do not use outside knowledge.
-    Use conversation history only to resolve references in follow-up questions (for example, "that section").
-    Do not treat history as factual source; facts must come from context.
-    {retry_instruction}
+You are an advanced RAG assistant.
 
-    Conversation History (last turns):
-    {history_text}
-    
-    Context:
-    {context}
-    
-    Question: {query}
-    
-    Answer:
-    """
-    
-    model = genai.GenerativeModel("gemini-flash-latest")
-    result = model.generate_content(prompt)
-    return {
-        "response": result.text,
-        "generation_attempts": generation_attempts + 1,
-    }
+Instruction:
+- Answer ONLY using the provided context.
+- If context is insufficient, reply exactly:
+  "I don't have enough information in the uploaded documents to answer this."
+- Use conversation history only to resolve references in follow-up questions.
+- Do not use outside knowledge.
+- Give a direct answer only. No preface like "Based on the provided context".
+- Do not include explanations about where the answer came from.
+- Do not include citation text in the answer body.
+- Keep output short and plain (1-3 lines).
+- If user explicitly asks for detail (for example: "explain in detail", "step by step", "elaborate"), provide a longer response.
+{retry_instruction}
+
+Conversation History (last 3 turns):
+{history_text}
+
+Context Density:
+{context_density}
+
+Retrieved Context Chunks (with metadata):
+{context}
+
+User Question:
+{query}
+
+Final Answer:
+"""
+
+    try:
+        response_text = ""
+        for _ in range(2):  # retry once if empty response
+            response_text = (generate(prompt) or "").strip()
+            if response_text:
+                break
+
+        if not response_text:
+            return {
+                "response": (
+                    "[GENERATOR_ERROR] "
+                    "code=EMPTY_RESPONSE "
+                    "message=LLM returned an empty response after retry."
+                ),
+                "generation_attempts": generation_attempts + 1,
+            }
+
+        return {
+            "response": response_text,
+            "generation_attempts": generation_attempts + 1,
+        }
+    except Exception as exc:
+        return {
+            "response": (
+                "[GENERATOR_ERROR] "
+                "code=LLM_EXCEPTION "
+                f"message={str(exc)}"
+            ),
+            "generation_attempts": generation_attempts + 1,
+        }
 
 def quality_check_node(state: AgentState):
     print("--- QUALITY CHECK ---")
     response = (state.get("response") or "").strip()
     attempts = state.get("generation_attempts", 0)
 
-    min_words = 25
+    if response.startswith("[GENERATOR_ERROR]"):
+        return {"regenerate": False}
+
+    min_words = 8
     max_attempts = 2
 
     if len(response.split()) < min_words and attempts < max_attempts:
@@ -123,9 +163,7 @@ def citation_node(state: AgentState):
     unique_citations = list(dict.fromkeys(citations))  # preserve order, remove duplicates
     if not unique_citations:
         return state
-
-    citation_text = "\n\n**Citations:**\n" + "\n".join([f"- {c}" for c in unique_citations])
-    return {"response": state["response"] + citation_text, "citations": unique_citations}
+    return {"response": state["response"], "citations": unique_citations}
 
 # Graph construction
 workflow = StateGraph(AgentState)

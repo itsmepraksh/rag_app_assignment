@@ -15,6 +15,11 @@ function addMessage(text, isUser = false) {
     chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
+// Scroll to bottom on load
+window.addEventListener('load', () => {
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+});
+
 // File Upload Logic
 dropZone.addEventListener('click', () => fileInput.click());
 
@@ -32,7 +37,7 @@ fileInput.addEventListener('change', async (e) => {
             body: formData
         });
         const result = await response.json();
-        
+
         if (response.ok) {
             addFileToList(file.name, result.chunks);
             statusText.textContent = 'File Ready';
@@ -54,6 +59,22 @@ function addFileToList(name, chunks) {
     fileList.appendChild(item);
 }
 
+// Helper: Show thinking indicator
+function showThinking() {
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'message bot thinking';
+    msgDiv.id = 'thinking-msg';
+    msgDiv.innerHTML = '<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>';
+    chatMessages.appendChild(msgDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+// Helper: Remove thinking indicator
+function removeThinking() {
+    const el = document.getElementById('thinking-msg');
+    if (el) el.remove();
+}
+
 // Query Logic
 async function handleSend() {
     const query = userInput.value.trim();
@@ -61,7 +82,11 @@ async function handleSend() {
 
     addMessage(query, true);
     userInput.value = '';
-    statusText.textContent = 'Thinking...';
+
+    // Show thinking indicator in chat
+    showThinking();
+    // Keep status as system ready or clear it
+    statusText.textContent = 'Processing...';
 
     try {
         const response = await fetch('/api/query', {
@@ -70,14 +95,19 @@ async function handleSend() {
             body: JSON.stringify({ query })
         });
         const result = await response.json();
-        
+
+        // Remove thinking indicator before showing result
+        removeThinking();
+
         if (response.ok) {
             addMessage(result.response);
             statusText.textContent = 'System Ready';
         } else {
             addMessage("Error: " + result.detail);
+            statusText.textContent = 'System Ready';
         }
     } catch (err) {
+        removeThinking();
         addMessage("Sorry, something went wrong.");
         statusText.textContent = 'Error';
     }
