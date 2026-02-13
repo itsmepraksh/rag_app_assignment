@@ -11,3 +11,7 @@ langchain-huggingface>=0.0.3
 sentence-transformers>=3.0.1
 faiss-cpu>=1.8.0
 pypdf>=4.2.0
+Pillow>=10.0.0
+pytesseract>=0.3.10
+
+pytest>=8.0.0

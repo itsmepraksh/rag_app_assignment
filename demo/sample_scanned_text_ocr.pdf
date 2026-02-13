@@ -1,0 +1,69 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Count 2 /Kids [ 3 0 R 5 0 R ] >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 511 >>
+stream
+BT
+/F1 12 Tf
+72 740 Td (DocuMind Demo Document 1) Tj
+0 0 Td
+72 722 Td () Tj
+0 0 Td
+72 704 Td (Employee Handbook - Highlights) Tj
+0 0 Td
+72 686 Td (Section 1: Work Hours are Monday to Friday, 9:00 AM to 6:00 PM.) Tj
+0 0 Td
+72 668 Td (Section 2: Leave Policy provides 18 paid annual leave days and 10 sick leave days.) Tj
+0 0 Td
+72 650 Td (Section 3: Employees must submit leave requests 2 business days in advance.) Tj
+0 0 Td
+72 632 Td (Section 4: Reimbursements need receipts and manager approval.) Tj
+0 0 Td
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> /Contents 6 0 R >>
+endobj
+6 0 obj
+<< /Length 463 >>
+stream
+BT
+/F1 12 Tf
+72 740 Td (DocuMind Demo Document 1) Tj
+0 0 Td
+72 722 Td () Tj
+0 0 Td
+72 704 Td (Section 5: IT Security requires strong passwords and MFA for all accounts.) Tj
+0 0 Td
+72 686 Td (Section 6: Data Privacy prohibits sharing customer data externally.) Tj
+0 0 Td
+72 668 Td (Section 7: Escalation path is Team Lead, then HR, then Operations Head.) Tj
+0 0 Td
+72 650 Td (Section 8: Policy updates are announced on the first Monday of each month.) Tj
+0 0 Td
+ET
+endstream
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000123 00000 n 
+0000000298 00000 n 
+0000000860 00000 n 
+0000001035 00000 n 
+trailer
+<< /Size 7 /Root 1 0 R >>
+startxref
+1549
+%%EOF

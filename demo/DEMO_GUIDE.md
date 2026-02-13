@@ -1,39 +1,42 @@
-# Demo Guide (Phase 6)
+# Demo Guide (Phase 8)
 
-## Sample PDFs
+## Demo Files
 
 - `/Users/prakashsamanta/workSpace/assignment1/demo/sample_policy_handbook.pdf`
 - `/Users/prakashsamanta/workSpace/assignment1/demo/sample_product_release_notes.pdf`
+- `/Users/prakashsamanta/workSpace/assignment1/demo/sample_scanned_text_ocr.pdf`
 
-## 5 Example Questions
+## Scripted Demo Query Flow
 
-1. What are the official work hours in the handbook?
-2. How many paid annual leave days and sick leave days are allowed?
-3. What security controls are mandatory for accounts?
-4. Which features were introduced in product version 2.4?
-5. What is the known mobile issue and workaround in the release notes?
+1. **Normal retrieval**
+- Query: `What are the official work hours in the handbook?`
+- Show: concise answer from uploaded docs + citation chips (`filename (Page N)`).
 
-## Follow-up Question Example
+2. **Follow-up memory**
+- Query: `Explain section 2 in simple words.`
+- Show: follow-up resolved from prior turn context in same session.
 
-- Follow-up: "Explain section 2 in simple words."
-- Why this works: the system uses the recent conversation turns to resolve "section 2" from prior context.
+3. **Web-search-assisted answer**
+- Query: `What are the latest policy news updates today?`
+- Show one of:
+  - If web MCP enabled: response includes external source URL.
+  - If web MCP disabled: explicit web fallback/unavailable message.
 
-## Irrelevant Question Example
+4. **Citation output focus**
+- Query: `Which features were introduced in product version 2.4?`
+- Show citation output for each answer and optionally enable `Debug` to display supporting chunks + trace id.
 
-- "Who won the last FIFA World Cup?"
-- Expected behavior: system should avoid outside knowledge and say it does not have enough information in uploaded docs.
+## Live Demo Steps
 
-## Practice Demo Flow
+1. Open `http://localhost:8000`
+2. Upload all three sample files.
+3. Run the four scripted queries above in order.
+4. Keep same session id to show continuity.
+5. Click `Reset` and ask follow-up again to demonstrate memory reset behavior.
 
-1. Open app: `http://localhost:8000`
-2. Upload both PDFs from `demo/`.
-3. Ask one factual question (for example Question 1).
-4. Ask the follow-up question: "Explain section 2 in simple words."
-5. Point out citations in response (`filename` + `Page`).
-6. Ask unrelated question (FIFA example) and show grounded fallback behavior.
+## Narration Pointers
 
-## Demo Tips
-
-- Keep answers short and ask one question at a time.
-- Highlight the citation block after each answer.
-- Mention that follow-up works using conversation memory (last 3 turns).
+- Mention hybrid retrieval + reranking pipeline.
+- Mention session-based memory (`recent` + `summary` rollup).
+- Mention MCP adapters and local failover behavior.
+- Call out `agent_trace_id` and debug panel as observability features.
