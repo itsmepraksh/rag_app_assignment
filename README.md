@@ -81,6 +81,28 @@ Behavior:
 - If MCP is enabled and endpoint is reachable, adapter uses remote MCP service.
 - If MCP fails and `MCP_FAILOVER_LOCAL=true`, it falls back to local behavior.
 
+### Run Local MCP Servers (Required for strict MCP demo)
+
+This repo includes a bundled local MCP HTTP server at:
+- `mcp_servers/local_mcp_server.py`
+
+Start it in a separate terminal:
+
+```bash
+./scripts/start_local_mcp.sh
+```
+
+Then run the main app in another terminal:
+
+```bash
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Current `.env` is configured for strict MCP mode:
+- `MCP_ENABLED=true`
+- `MCP_FAILOVER_LOCAL=false`
+- MCP URLs point to `http://127.0.0.1:9100/...`
+
 ## API Summary
 
 - `POST /api/upload`
