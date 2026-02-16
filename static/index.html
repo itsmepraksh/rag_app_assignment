@@ -5,37 +5,49 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DocuMind AI - Advanced RAG Q&A</title>
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="container">
         <header>
             <div class="logo">DocuMind AI</div>
-            <div id="status" class="text-muted" style="font-size: 0.875rem;">System Ready</div>
+            <div class="header-right">
+                <div class="session-chip">
+                    <span>Session</span>
+                    <code id="sessionIdText"></code>
+                    <button id="newSessionBtn" class="ghost-btn" type="button">New</button>
+                    <button id="resetSessionBtn" class="ghost-btn" type="button">Reset</button>
+                </div>
+                <div id="status" class="status-pill">System Ready</div>
+            </div>
         </header>
 
         <main class="main-layout">
-            <!-- Sidebar: Uploads -->
             <aside class="glass-card">
-                <h2 style="margin-bottom: 1rem; font-size: 1.25rem;">Documents</h2>
+                <h2 class="section-title">Documents</h2>
                 <div class="upload-area" id="dropZone">
-                    <p style="font-size: 0.875rem; color: var(--text-muted);">Click or drag PDF/TXT</p>
-                    <input type="file" id="fileInput" hidden accept=".pdf,.txt">
+                    <p class="upload-hint">Click or drag .pdf / .txt / .md</p>
+                    <input type="file" id="fileInput" hidden accept=".pdf,.txt,.md">
                 </div>
-                <div class="file-list" id="fileList">
-                    <!-- Files will appear here -->
-                </div>
+                <div class="file-list" id="fileList"></div>
             </aside>
 
-            <!-- Main: Chat -->
             <section class="glass-card chat-container">
                 <div class="messages" id="chatMessages">
                     <div class="message bot">
                         Hello! Upload some documents on the left, and I'll help you answer any questions about them.
                     </div>
                 </div>
+                <details class="debug-panel" id="debugPanel">
+                    <summary>Debug Panel</summary>
+                    <pre id="debugOutput">No trace yet.</pre>
+                </details>
                 <div class="input-area">
                     <input type="text" id="userInput" placeholder="Ask something about your docs...">
+                    <label class="debug-toggle">
+                        <input type="checkbox" id="debugToggle">
+                        <span>Debug</span>
+                    </label>
                     <button id="sendBtn">Send</button>
                 </div>
             </section>

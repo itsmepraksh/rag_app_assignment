@@ -1,173 +1,408 @@
 import os
-from typing import List, TypedDict
-from dotenv import load_dotenv
-import google.generativeai as genai
+import logging
+import re
+from typing import Any, Literal, TypedDict
 from langgraph.graph import StateGraph, END
-from core.rag import rag_manager
 
-load_dotenv()
-genai.configure(api_key=os.getenv("Gemini_API_Key"))
+logger = logging.getLogger(__name__)
 
-# State definition
-class AgentState(TypedDict):
+
+class AgentState(TypedDict, total=False):
     query: str
-    documents: List[dict]  # Updated to include metadata
-    conversation_history: List[dict]
+    agent_trace_id: str
+    conversation_history: list[dict[str, str]]
+    conversation_summary: str
+    web_results: list[dict[str, Any]]
+    use_web_search: bool
+    intent: Literal["factual", "summary", "follow_up", "memory", "other"]
+    needs_web: bool
+    use_memory_response: bool
+    retrieved_docs: list[dict[str, Any]]
+    reranked_docs: list[dict[str, Any]]
+    answer: str
+    citations: list[str]
+    # Backward-compatible fields used by API layer.
     response: str
-    citations: List[str]
-    iterations: int
-    generation_attempts: int
+    documents: list[dict[str, Any]]
 
-# Nodes
-def retriever_node(state: AgentState):
-    print("--- RETRIEVING ---")
-    query = state["query"]
-    docs = rag_manager.query(query)
-    # Store both content and metadata
-    doc_data = [
-        {
-            "content": d.page_content,
-            "metadata": d.metadata
-        } for d in docs
-    ]
-    return {"documents": doc_data, "iterations": state.get("iterations", 0) + 1}
 
-def validator_node(state: AgentState):
-    print("--- VALIDATING ---")
-    # Simple validation: if no docs found, maybe re-query or fail
-    if not state["documents"]:
-        return {"response": "I couldn't find any relevant information in the documents provided."}
-    return state
-
-def generator_node(state: AgentState):
-    print("--- GENERATING ---")
-    
-    # Construct context with metadata
-    context_parts = []
-    
-    for doc in state["documents"]:
-        content = doc["content"]
-        metadata = doc["metadata"]
-        source = os.path.basename(metadata.get("source", "Unknown"))
-        page = metadata.get("page", 0) + 1  # LangChain page index is 0-based
-        
-        context_parts.append(f"Source: {source} (Page {page})\nContent: {content}")
-    
-    context = "\n\n---\n\n".join(context_parts)
-    query = state["query"]
-    recent_history = state.get("conversation_history", [])[-3:]
-    history_parts = []
-    for i, turn in enumerate(recent_history, start=1):
-        question = turn.get("question", "").strip()
-        answer = turn.get("answer", "").strip()
-        if question or answer:
-            history_parts.append(f"Turn {i}\nQuestion: {question}\nAnswer: {answer}")
-    history_text = "\n\n".join(history_parts) if history_parts else "No prior conversation."
-    
-    generation_attempts = state.get("generation_attempts", 0)
-    retry_instruction = ""
-    if generation_attempts > 0:
-        retry_instruction = (
-            "Previous answer was too short. Provide a fuller answer with clear detail, still using only context."
-        )
-
-    prompt = f"""
-    You are an advanced AI assistant. Answer the user's question based ONLY on the provided context chunks.
-    If the context doesn't contain the answer, say "I don't have enough information in the uploaded documents to answer this."
-    
-    CRITICAL INSTRUCTION: Your answer must be derived strictly from the Context below. Do not use outside knowledge.
-    Use conversation history only to resolve references in follow-up questions (for example, "that section").
-    Do not treat history as factual source; facts must come from context.
-    {retry_instruction}
-
-    Conversation History (last turns):
-    {history_text}
-    
-    Context:
-    {context}
-    
-    Question: {query}
-    
-    Answer:
-    """
-    
-    model = genai.GenerativeModel("gemini-flash-latest")
-    result = model.generate_content(prompt)
+def _normalize_doc(doc: Any) -> dict[str, Any]:
+    if isinstance(doc, dict):
+        return {
+            "content": doc.get("content", ""),
+            "metadata": doc.get("metadata", {}) or {},
+        }
     return {
-        "response": result.text,
-        "generation_attempts": generation_attempts + 1,
+        "content": getattr(doc, "page_content", "") or "",
+        "metadata": getattr(doc, "metadata", {}) or {},
     }
 
-def quality_check_node(state: AgentState):
-    print("--- QUALITY CHECK ---")
-    response = (state.get("response") or "").strip()
-    attempts = state.get("generation_attempts", 0)
 
-    min_words = 25
-    max_attempts = 2
+def _safe_float(text: str, default: float = 0.0) -> float:
+    try:
+        return float(text)
+    except Exception:
+        return default
 
-    if len(response.split()) < min_words and attempts < max_attempts:
-        return {"regenerate": True}
-    return {"regenerate": False}
 
-def citation_node(state: AgentState):
-    print("--- APPENDING CITATIONS ---")
-    citations = []
+class OrchestratorAgent:
+    @staticmethod
+    def run(state: AgentState) -> AgentState:
+        needs_web = state.get("needs_web", False)
+        has_web_results = bool(state.get("web_results"))
+        intent = state.get("intent", "other")
+        use_memory_response = bool(intent == "memory")
+        use_web_search = bool(needs_web and not has_web_results and not use_memory_response)
+        return {
+            "intent": intent,
+            "agent_trace_id": state.get("agent_trace_id", ""),
+            "needs_web": needs_web,
+            "use_memory_response": use_memory_response,
+            "retrieved_docs": state.get("retrieved_docs", []),
+            "reranked_docs": state.get("reranked_docs", []),
+            "answer": state.get("answer", ""),
+            "citations": state.get("citations", []),
+            "response": state.get("response", ""),
+            "documents": state.get("documents", []),
+            "conversation_summary": state.get("conversation_summary", ""),
+            "web_results": state.get("web_results", []),
+            "use_web_search": use_web_search,
+        }
 
-    for doc in state["documents"]:
-        metadata = doc["metadata"]
-        source = os.path.basename(metadata.get("source", "Unknown"))
-        page = metadata.get("page", 0) + 1  # LangChain page index is 0-based
-        citations.append(f"{source} (Page {page})")
 
-    unique_citations = list(dict.fromkeys(citations))  # preserve order, remove duplicates
-    if not unique_citations:
-        return state
+class QueryAnalysisAgent:
+    @staticmethod
+    def run(state: AgentState) -> AgentState:
+        query = (state.get("query") or "").strip().lower()
+        follow_up_markers = ("section ", "that ", "it ", "this ", "those ", "these ")
+        memory_markers = (
+            "what was my question",
+            "what was my last question",
+            "what was the question",
+            "what did i ask",
+            "what did i just ask",
+            "repeat my question",
+            "my previous question",
+            "last question",
+            "previous question",
+        )
+        web_markers = ("latest", "today", "current", "news", "internet", "web")
+        summary_markers = ("summarize", "summary", "explain", "overview")
 
-    citation_text = "\n\n**Citations:**\n" + "\n".join([f"- {c}" for c in unique_citations])
-    return {"response": state["response"] + citation_text, "citations": unique_citations}
+        if any(marker in query for marker in memory_markers):
+            intent = "memory"
+        elif any(marker in query for marker in follow_up_markers):
+            intent = "follow_up"
+        elif any(marker in query for marker in summary_markers):
+            intent = "summary"
+        elif query:
+            intent = "factual"
+        else:
+            intent = "other"
 
-# Graph construction
+        needs_web = any(marker in query for marker in web_markers)
+        return {"intent": intent, "needs_web": needs_web}
+
+
+class RetrievalAgent:
+    @staticmethod
+    def run(state: AgentState) -> AgentState:
+        from core.mcp import vector_db_mcp
+
+        query = state.get("query", "")
+        hybrid_results = vector_db_mcp.hybrid_search(query, k=12)
+        normalized = [
+            {
+                "content": item.get("content", ""),
+                "metadata": item.get("metadata", {}),
+                "scores": {
+                    "dense_score": item.get("dense_score", 0.0),
+                    "sparse_score": item.get("sparse_score", 0.0),
+                    "fused_score": item.get("fused_score", 0.0),
+                },
+                "hybrid_rank": item.get("hybrid_rank"),
+            }
+            for item in hybrid_results
+        ]
+        logger.info("retrieval query=%r chunks=%d", query[:120], len(normalized))
+        return {"retrieved_docs": normalized, "documents": normalized}
+
+
+class WebSearchAgent:
+    @staticmethod
+    def run(state: AgentState) -> AgentState:
+        from core.mcp import web_search_mcp
+
+        query = state.get("query", "")
+        results = web_search_mcp.search(query, top_k=5)
+        return {"web_results": results}
+
+
+class RerankingAgent:
+    _cross_encoder = None
+    _cross_encoder_attempted = False
+
+    @classmethod
+    def _get_cross_encoder(cls):
+        if cls._cross_encoder_attempted:
+            return cls._cross_encoder
+        cls._cross_encoder_attempted = True
+        try:
+            from sentence_transformers import CrossEncoder
+
+            cls._cross_encoder = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+        except Exception:
+            cls._cross_encoder = None
+        return cls._cross_encoder
+
+    @staticmethod
+    def _heuristic_score(query: str, content: str) -> float:
+        q_terms = set(re.findall(r"[a-z0-9]+", query.lower()))
+        c_terms = set(re.findall(r"[a-z0-9]+", content.lower()))
+        if not q_terms:
+            return 0.0
+        overlap = len(q_terms.intersection(c_terms))
+        return overlap / len(q_terms)
+
+    @staticmethod
+    def _llm_score(query: str, content: str) -> float:
+        from core.llm_client import generate
+
+        prompt = f"""
+Score relevance from 0 to 1 for the passage answering the query.
+Return ONLY a decimal number.
+Query: {query}
+Passage: {content[:1800]}
+Score:
+"""
+        raw = (generate(prompt) or "").strip()
+        match = re.search(r"([01](?:\.\d+)?)", raw)
+        if not match:
+            return 0.0
+        return min(1.0, max(0.0, _safe_float(match.group(1), 0.0)))
+
+    @staticmethod
+    def run(state: AgentState) -> AgentState:
+        query = state.get("query", "")
+        docs = state.get("retrieved_docs", [])
+        if not docs:
+            return {"reranked_docs": [], "documents": []}
+
+        cross_encoder = RerankingAgent._get_cross_encoder()
+        reranked: list[dict[str, Any]] = []
+
+        if cross_encoder is not None:
+            pairs = [(query, d.get("content", "")) for d in docs]
+            try:
+                ce_scores = cross_encoder.predict(pairs)
+                for doc, ce_score in zip(docs, ce_scores):
+                    doc_copy = {**doc}
+                    scores = {**(doc.get("scores") or {})}
+                    scores["rerank_score"] = float(ce_score)
+                    scores["rerank_model"] = "cross_encoder"
+                    doc_copy["scores"] = scores
+                    reranked.append(doc_copy)
+            except Exception:
+                reranked = []
+
+        if not reranked:
+            for doc in docs:
+                doc_copy = {**doc}
+                content = doc.get("content", "")
+                score = 0.0
+                model = "heuristic"
+                try:
+                    score = RerankingAgent._llm_score(query, content)
+                    model = "llm_rerank"
+                except Exception:
+                    score = RerankingAgent._heuristic_score(query, content)
+                    model = "heuristic"
+                scores = {**(doc.get("scores") or {})}
+                scores["rerank_score"] = float(score)
+                scores["rerank_model"] = model
+                doc_copy["scores"] = scores
+                reranked.append(doc_copy)
+
+        reranked.sort(
+            key=lambda d: (
+                d.get("scores", {}).get("rerank_score", 0.0),
+                d.get("scores", {}).get("fused_score", 0.0),
+            ),
+            reverse=True,
+        )
+        top_k = reranked[:5]
+        for idx, item in enumerate(top_k, start=1):
+            item["rerank_rank"] = idx
+        return {"reranked_docs": top_k, "documents": top_k}
+
+
+class GenerationAgent:
+    FALLBACK_LOCAL = "I couldn't find any relevant information in the documents provided."
+    FALLBACK_WEB = "I need web fallback for this query, but web retrieval is not configured in this environment."
+
+    @staticmethod
+    def run(state: AgentState) -> AgentState:
+        from core.llm_client import generate
+
+        if state.get("intent") == "memory":
+            history = state.get("conversation_history", [])[-1:]
+            if not history:
+                msg = "I don't have any previous question in this session yet."
+                return {"answer": msg, "response": msg}
+            last_question = (history[0].get("question") or "").strip()
+            if not last_question:
+                msg = "I don't have any previous question in this session yet."
+                return {"answer": msg, "response": msg}
+            response = f'Your previous question was: "{last_question}"'
+            return {"answer": response, "response": response}
+
+        docs = state.get("reranked_docs", [])
+        web_results = state.get("web_results", [])
+        if state.get("needs_web") and web_results:
+            top = web_results[0]
+            title = top.get("title", "Web result")
+            snippet = top.get("snippet", "")
+            url = top.get("url", "")
+            response = f"{title}: {snippet}".strip()
+            if url:
+                response = f"{response}\nSource: {url}"
+            return {"answer": response, "response": response}
+        if state.get("needs_web") and not docs:
+            return {"answer": GenerationAgent.FALLBACK_WEB, "response": GenerationAgent.FALLBACK_WEB}
+        if not docs:
+            return {"answer": GenerationAgent.FALLBACK_LOCAL, "response": GenerationAgent.FALLBACK_LOCAL}
+
+        context_parts = []
+        for doc in docs:
+            metadata = doc.get("metadata", {})
+            source = os.path.basename(metadata.get("source", "Unknown"))
+            page = metadata.get("page", 0) + 1
+            context_parts.append(f"Source: {source} (Page {page})\nContent: {doc.get('content', '')}")
+        context = "\n\n---\n\n".join(context_parts)
+
+        history = state.get("conversation_history", [])[-3:]
+        summary_text = (state.get("conversation_summary") or "").strip()
+        history_text = "\n\n".join(
+            f"Question: {turn.get('question', '').strip()}\nAnswer: {turn.get('answer', '').strip()}"
+            for turn in history
+            if turn.get("question") or turn.get("answer")
+        ) or "No prior conversation."
+
+        prompt = f"""
+You are an advanced RAG assistant.
+
+Instruction:
+- Answer ONLY using the provided context.
+- If context is insufficient, reply exactly:
+  "I don't have enough information in the uploaded documents to answer this."
+- Use conversation history only to resolve references in follow-up questions.
+- Do not use outside knowledge.
+- Give a direct answer only.
+
+Conversation History:
+{history_text}
+
+Conversation Summary:
+{summary_text or "No prior summary."}
+
+Retrieved Context:
+{context}
+
+User Question:
+{state.get("query", "")}
+
+Final Answer:
+"""
+
+        try:
+            answer = (generate(prompt) or "").strip()
+            if not answer:
+                answer = "[GENERATOR_ERROR] code=EMPTY_RESPONSE message=LLM returned an empty response."
+        except Exception as exc:
+            answer = f"[GENERATOR_ERROR] code=LLM_EXCEPTION message={str(exc)}"
+
+        return {"answer": answer, "response": answer}
+
+
+class CitationAgent:
+    @staticmethod
+    def run(state: AgentState) -> AgentState:
+        citations: list[str] = []
+        for doc in state.get("reranked_docs", []):
+            metadata = doc.get("metadata", {})
+            source = os.path.basename(metadata.get("source", "Unknown"))
+            page = metadata.get("page", 0) + 1
+            citations.append(f"{source} (Page {page})")
+        unique = list(dict.fromkeys(citations))
+        return {"citations": unique, "documents": state.get("reranked_docs", [])}
+
+
+def route_after_query_analysis(state: AgentState) -> str:
+    return "orchestrator"
+
+
+def route_after_orchestrator(state: AgentState) -> str:
+    if state.get("use_memory_response"):
+        return "generation"
+    if state.get("use_web_search"):
+        return "web_search"
+    return "retrieval"
+
+
+def route_after_web_search(state: AgentState) -> str:
+    if state.get("web_results"):
+        return "generation"
+    return "retrieval"
+
+
+def route_after_retrieval(state: AgentState) -> str:
+    if not state.get("retrieved_docs"):
+        return "generation"
+    return "reranking"
+
+
+def route_after_generation(state: AgentState) -> str:
+    if state.get("reranked_docs") and state.get("answer"):
+        return "citation"
+    return END
+
+
 workflow = StateGraph(AgentState)
+workflow.add_node("query_analysis", QueryAnalysisAgent.run)
+workflow.add_node("orchestrator", OrchestratorAgent.run)
+workflow.add_node("web_search", WebSearchAgent.run)
+workflow.add_node("retrieval", RetrievalAgent.run)
+workflow.add_node("reranking", RerankingAgent.run)
+workflow.add_node("generation", GenerationAgent.run)
+workflow.add_node("citation", CitationAgent.run)
 
-workflow.add_node("retriever", retriever_node)
-workflow.add_node("validator", validator_node)
-workflow.add_node("generator", generator_node)
-workflow.add_node("quality_check", quality_check_node)
-workflow.add_node("citation", citation_node)
-
-workflow.set_entry_point("retriever")
-workflow.add_edge("retriever", "validator")
-
-def decide_to_generate(state: AgentState):
-    if "response" in state and state["response"]:
-        return END
-    return "generator"
-
+workflow.set_entry_point("query_analysis")
 workflow.add_conditional_edges(
-    "validator",
-    decide_to_generate,
-    {
-        "generator": "generator",
-        END: END
-    }
+    "query_analysis",
+    route_after_query_analysis,
+    {"orchestrator": "orchestrator"},
 )
-
-def decide_after_quality_check(state: AgentState):
-    if state.get("regenerate"):
-        return "generator"
-    return "citation"
-
-workflow.add_edge("generator", "quality_check")
 workflow.add_conditional_edges(
-    "quality_check",
-    decide_after_quality_check,
-    {
-        "generator": "generator",
-        "citation": "citation",
-    }
+    "orchestrator",
+    route_after_orchestrator,
+    {"generation": "generation", "web_search": "web_search", "retrieval": "retrieval"},
+)
+workflow.add_conditional_edges(
+    "web_search",
+    route_after_web_search,
+    {"generation": "generation", "retrieval": "retrieval"},
+)
+workflow.add_conditional_edges(
+    "retrieval",
+    route_after_retrieval,
+    {"reranking": "reranking", "generation": "generation"},
+)
+workflow.add_edge("reranking", "generation")
+workflow.add_conditional_edges(
+    "generation",
+    route_after_generation,
+    {"citation": "citation", END: END},
 )
 workflow.add_edge("citation", END)
 
-# Compile
 app_graph = workflow.compile()

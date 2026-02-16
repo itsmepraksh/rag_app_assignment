@@ -1,39 +1,47 @@
-# Demo Guide (Phase 6)
+# Demo Guide (Plain English)
 
-## Sample PDFs
+This demo is designed for non-technical viewers.
 
-- `/Users/prakashsamanta/workSpace/assignment1/demo/sample_policy_handbook.pdf`
-- `/Users/prakashsamanta/workSpace/assignment1/demo/sample_product_release_notes.pdf`
+## Goal
 
-## 5 Example Questions
+Show that the system can:
+- answer from uploaded documents
+- provide citations
+- handle follow-up questions
+- optionally use live web search
 
-1. What are the official work hours in the handbook?
-2. How many paid annual leave days and sick leave days are allowed?
-3. What security controls are mandatory for accounts?
-4. Which features were introduced in product version 2.4?
-5. What is the known mobile issue and workaround in the release notes?
+## Demo setup
 
-## Follow-up Question Example
+1. Open app at `http://localhost:8000`
+2. Upload:
+- `sample_policy_handbook.pdf`
+- `sample_product_release_notes.pdf`
+- `sample_scanned_text_ocr.pdf`
+3. Keep same session during demo
 
-- Follow-up: "Explain section 2 in simple words."
-- Why this works: the system uses the recent conversation turns to resolve "section 2" from prior context.
+## Demo flow
 
-## Irrelevant Question Example
+1. Ask: `What are the official work hours in the handbook?`
+- Explain: answer is grounded in uploaded files.
 
-- "Who won the last FIFA World Cup?"
-- Expected behavior: system should avoid outside knowledge and say it does not have enough information in uploaded docs.
+2. Ask: `Explain section 2 in simple words.`
+- Explain: this proves memory/follow-up understanding.
 
-## Practice Demo Flow
+3. Ask: `Which features were introduced in product version 2.4?`
+- Explain: this proves retrieval from another file.
 
-1. Open app: `http://localhost:8000`
-2. Upload both PDFs from `demo/`.
-3. Ask one factual question (for example Question 1).
-4. Ask the follow-up question: "Explain section 2 in simple words."
-5. Point out citations in response (`filename` + `Page`).
-6. Ask unrelated question (FIFA example) and show grounded fallback behavior.
+4. Ask: `What are the latest policy news updates today?`
+- Explain: this tests web-search route.
+- If Tavily key is set, you should see real web sources.
+- If not, you may see local mock source.
 
-## Demo Tips
+5. Ask: `Who won the last FIFA World Cup?`
+- Explain: system should avoid pretending unrelated facts are in your docs.
 
-- Keep answers short and ask one question at a time.
-- Highlight the citation block after each answer.
-- Mention that follow-up works using conversation memory (last 3 turns).
+## What to highlight while speaking
+
+- "The answer includes citations, so we can verify source."
+- "The app remembers context inside one session."
+- "Web search can be switched on with API key."
+- "Reset clears memory for fresh conversation."
+
