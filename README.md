@@ -1,151 +1,124 @@
-# DocuMind AI - Multi-Agent RAG With MCP
+# DocuMind AI
 
-DocuMind AI is a FastAPI + LangGraph document Q&A app with hybrid retrieval, reranking, MCP adapters, session memory, and citation-aware answers.
+DocuMind AI helps you upload documents and ask questions in plain language.
+It gives answers with citations, remembers short conversation context, and can optionally use live web search.
 
-## Setup
+## Deliverables
 
-1. Create and activate venv:
+1. Source code repository
+- This repository contains the full application code.
+
+2. Documentation
+- `/Users/prakashsamanta/workSpace/assignment1/README.md` (this file)
+- `/Users/prakashsamanta/workSpace/assignment1/docs/NON_TECH_USER_GUIDE.md`
+- `/Users/prakashsamanta/workSpace/assignment1/DELIVERABLES.md`
+
+3. Demo
+- Sample documents:
+  - `/Users/prakashsamanta/workSpace/assignment1/demo/sample_policy_handbook.pdf`
+  - `/Users/prakashsamanta/workSpace/assignment1/demo/sample_product_release_notes.pdf`
+  - `/Users/prakashsamanta/workSpace/assignment1/demo/sample_scanned_text_ocr.pdf`
+- Example demo queries:
+  - `/Users/prakashsamanta/workSpace/assignment1/demo/EXAMPLE_QUERIES.md`
+
+## Quick Start (Simple)
+
+1. Open Terminal in project folder:
+```bash
+cd /Users/prakashsamanta/workSpace/assignment1
+```
+
+2. Create and activate virtual environment:
 ```bash
 python3 -m venv venv
 source venv/bin/activate
 ```
 
-2. Install dependencies:
+3. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Start Ollama:
+4. Make sure Ollama is running and model exists:
 ```bash
 ollama pull llama3:8b
 brew services start ollama
 ```
 
-4. Configure `.env`:
-```env
-LLM_PROVIDER=ollama
-LLM_MODEL=llama3:8b
-LLM_TIMEOUT_SECONDS=45
-
-MCP_ENABLED=false
-MCP_TIMEOUT_SECONDS=8
-MCP_FAILOVER_LOCAL=true
-MCP_WEB_SEARCH_ENABLED=false
-MCP_WEB_SEARCH_URL=http://127.0.0.1:9101/search
-MCP_VECTOR_DB_ENABLED=false
-MCP_VECTOR_DB_URL=http://127.0.0.1:9102/vector/hybrid_search
-MCP_DOC_PROCESSING_ENABLED=false
-MCP_DOC_PROCESSING_URL=http://127.0.0.1:9103/doc/process
-```
-
-5. Run server:
+5. Start MCP server (second terminal):
 ```bash
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-6. Open:
-`http://localhost:8000`
-
-## Architecture
-
-```mermaid
-flowchart TD
-    Q["User Query + Session ID"] --> QA["QueryAnalysisAgent"]
-    QA --> ORCH["OrchestratorAgent"]
-    ORCH -->|needs_web| WS["WebSearchAgent via Web Search MCP"]
-    ORCH -->|local_docs| RET["RetrievalAgent via Vector DB MCP"]
-    WS --> GEN["GenerationAgent"]
-    RET --> RR["RerankingAgent"]
-    RR --> GEN
-    GEN --> CIT["CitationAgent"]
-    CIT --> API["Hardened API Response<br/>answer + citations + trace id"]
-```
-
-## Required Agents (Short Note)
-
-- `OrchestratorAgent`: decides branch (web-search path vs local retrieval path).
-- `QueryAnalysisAgent`: classifies intent and flags `needs_web`.
-- `RetrievalAgent`: gets hybrid candidates through Vector DB MCP (or local failover).
-- `RerankingAgent`: ranks candidates with cross-encoder / LLM / heuristic fallback.
-- `GenerationAgent`: produces final grounded answer from context/history.
-- `CitationAgent`: composes citation strings (`filename`, `page`).
-
-## MCP Integration
-
-Adapters are in `core/mcp/`:
-- `web_search_mcp.py`
-- `vector_db_mcp.py`
-- `doc_processing_mcp.py`
-
-Behavior:
-- If MCP is enabled and endpoint is reachable, adapter uses remote MCP service.
-- If MCP fails and `MCP_FAILOVER_LOCAL=true`, it falls back to local behavior.
-
-### Run Local MCP Servers (Required for strict MCP demo)
-
-This repo includes a bundled local MCP HTTP server at:
-- `mcp_servers/local_mcp_server.py`
-
-Start it in a separate terminal:
-
-```bash
+cd /Users/prakashsamanta/workSpace/assignment1
 ./scripts/start_local_mcp.sh
 ```
 
-Then run the main app in another terminal:
-
+6. Start main app (first terminal):
 ```bash
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+cd /Users/prakashsamanta/workSpace/assignment1
+./venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-Current `.env` is configured for strict MCP mode:
-- `MCP_ENABLED=true`
-- `MCP_FAILOVER_LOCAL=false`
-- MCP URLs point to `http://127.0.0.1:9100/...`
+7. Open in browser:
+- `http://localhost:8000`
 
-## API Summary
+## How To Use (Non-Technical)
+
+1. Upload one or more files (`.pdf`, `.txt`, `.md`).
+2. Ask a question in normal English.
+3. Read the answer and citation chips.
+4. Ask follow-up questions in the same session.
+5. Click `Reset` when you want to clear memory for that session.
+
+## Real Web Search Setup (Tavily)
+
+By default, local MCP can return mock web results.
+To enable real web search:
+
+1. Create free API key from [Tavily](https://tavily.com).
+2. Update `/Users/prakashsamanta/workSpace/assignment1/.env`:
+```env
+MCP_ENABLED=true
+MCP_FAILOVER_LOCAL=false
+MCP_WEB_SEARCH_ENABLED=true
+MCP_WEB_SEARCH_URL=http://127.0.0.1:9100/search
+MCP_WEB_SEARCH_PROVIDER=tavily
+TAVILY_API_KEY=tvly-your-key-here
+```
+3. Restart both servers.
+
+If API key is missing or invalid, system falls back to local mock web results.
+
+## What Each Feature Does
+
+- Document Q&A: Answers from uploaded files.
+- Citations: Shows file/page references.
+- Memory: Remembers recent turns in the same session.
+- Hybrid retrieval + reranking: Improves answer relevance behind the scenes.
+- MCP integration: Connects to web search, vector retrieval, and doc processing endpoints.
+
+## API Endpoints (For Developers)
 
 - `POST /api/upload`
 - `POST /api/query`
 - `GET /api/conversations/{conversation_id}`
 - `POST /api/conversations/{conversation_id}/reset`
 
-`/api/query` returns:
-- `answer`
-- `citations`
-- `supporting_chunks` (only if debug mode)
-- `agent_trace_id`
-- `session_id`
-- `latency_ms`
-
 ## Troubleshooting
 
-1. Ollama connection errors
-- Ensure `brew services start ollama`
-- Run `ollama list`
+- `Connection refused` on MCP:
+  - Start MCP server with `./scripts/start_local_mcp.sh`.
+- Web result shows `local-mcp.invalid`:
+  - Tavily key is missing, wrong, or not loaded.
+- `500` error on query:
+  - Check both terminals for stack trace and restart services.
+- Slow response:
+  - First query can be slower due to model warmup.
 
-2. Model missing
-- Run `ollama pull llama3:8b`
-- Verify `.env` `LLM_MODEL`
+## Project Structure
 
-3. MCP endpoints unavailable
-- Keep `MCP_ENABLED=false` for local mode
-- Or keep `MCP_FAILOVER_LOCAL=true` for graceful fallback
+- `api/` - FastAPI routes
+- `core/` - graph, llm, rag, memory, MCP adapters
+- `mcp_servers/` - local MCP server implementation
+- `static/` - frontend UI
+- `demo/` - sample files and demo scripts
+- `docs/` - user-friendly documentation
 
-4. OCR not running
-- Install system Tesseract and Python packages (`pytesseract`, `Pillow`)
-- OCR path is optional; app still processes text-layer PDFs without OCR
-
-5. Offline environment warnings (HF model fetch)
-- Use offline flags for tests/benchmark:
-```bash
-HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 ./venv/bin/python -m unittest -q
-```
-
-## Demo Assets
-
-- `demo/sample_policy_handbook.pdf`
-- `demo/sample_product_release_notes.pdf`
-- `demo/sample_scanned_text_ocr.pdf` (OCR demo file)
-- `demo/DEMO_GUIDE.md`
-- `demo/DEMO_SUCCESS_SCRIPT.md`

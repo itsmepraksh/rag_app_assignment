@@ -112,8 +112,23 @@ class TestGraphPhase1(unittest.TestCase):
         self.assertEqual(route_after_query_analysis({"intent": "factual"}), "orchestrator")
 
     def test_route_after_orchestrator(self):
+        self.assertEqual(route_after_orchestrator({"use_memory_response": True}), "generation")
         self.assertEqual(route_after_orchestrator({"use_web_search": True}), "web_search")
         self.assertEqual(route_after_orchestrator({"use_web_search": False}), "retrieval")
+
+    def test_query_analysis_agent_detects_memory_intent(self):
+        out = QueryAnalysisAgent.run({"query": "what was my question that i asked you recently"})
+        self.assertEqual(out["intent"], "memory")
+        self.assertFalse(out["needs_web"])
+
+    def test_generation_agent_returns_previous_question_for_memory_intent(self):
+        out = GenerationAgent.run(
+            {
+                "intent": "memory",
+                "conversation_history": [{"question": "latest news today of india", "answer": "x"}],
+            }
+        )
+        self.assertIn("latest news today of india", out["answer"].lower())
 
     def test_route_after_web_search(self):
         self.assertEqual(route_after_web_search({"web_results": [{"url": "x"}]}), "generation")

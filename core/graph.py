@@ -14,8 +14,9 @@ class AgentState(TypedDict, total=False):
     conversation_summary: str
     web_results: list[dict[str, Any]]
     use_web_search: bool
-    intent: Literal["factual", "summary", "follow_up", "other"]
+    intent: Literal["factual", "summary", "follow_up", "memory", "other"]
     needs_web: bool
+    use_memory_response: bool
     retrieved_docs: list[dict[str, Any]]
     reranked_docs: list[dict[str, Any]]
     answer: str
@@ -49,11 +50,14 @@ class OrchestratorAgent:
     def run(state: AgentState) -> AgentState:
         needs_web = state.get("needs_web", False)
         has_web_results = bool(state.get("web_results"))
-        use_web_search = bool(needs_web and not has_web_results)
+        intent = state.get("intent", "other")
+        use_memory_response = bool(intent == "memory")
+        use_web_search = bool(needs_web and not has_web_results and not use_memory_response)
         return {
-            "intent": state.get("intent", "other"),
+            "intent": intent,
             "agent_trace_id": state.get("agent_trace_id", ""),
             "needs_web": needs_web,
+            "use_memory_response": use_memory_response,
             "retrieved_docs": state.get("retrieved_docs", []),
             "reranked_docs": state.get("reranked_docs", []),
             "answer": state.get("answer", ""),
@@ -71,10 +75,23 @@ class QueryAnalysisAgent:
     def run(state: AgentState) -> AgentState:
         query = (state.get("query") or "").strip().lower()
         follow_up_markers = ("section ", "that ", "it ", "this ", "those ", "these ")
+        memory_markers = (
+            "what was my question",
+            "what was my last question",
+            "what was the question",
+            "what did i ask",
+            "what did i just ask",
+            "repeat my question",
+            "my previous question",
+            "last question",
+            "previous question",
+        )
         web_markers = ("latest", "today", "current", "news", "internet", "web")
         summary_markers = ("summarize", "summary", "explain", "overview")
 
-        if any(marker in query for marker in follow_up_markers):
+        if any(marker in query for marker in memory_markers):
+            intent = "memory"
+        elif any(marker in query for marker in follow_up_markers):
             intent = "follow_up"
         elif any(marker in query for marker in summary_markers):
             intent = "summary"
@@ -227,6 +244,18 @@ class GenerationAgent:
     def run(state: AgentState) -> AgentState:
         from core.llm_client import generate
 
+        if state.get("intent") == "memory":
+            history = state.get("conversation_history", [])[-1:]
+            if not history:
+                msg = "I don't have any previous question in this session yet."
+                return {"answer": msg, "response": msg}
+            last_question = (history[0].get("question") or "").strip()
+            if not last_question:
+                msg = "I don't have any previous question in this session yet."
+                return {"answer": msg, "response": msg}
+            response = f'Your previous question was: "{last_question}"'
+            return {"answer": response, "response": response}
+
         docs = state.get("reranked_docs", [])
         web_results = state.get("web_results", [])
         if state.get("needs_web") and web_results:
@@ -313,6 +342,8 @@ def route_after_query_analysis(state: AgentState) -> str:
 
 
 def route_after_orchestrator(state: AgentState) -> str:
+    if state.get("use_memory_response"):
+        return "generation"
     if state.get("use_web_search"):
         return "web_search"
     return "retrieval"
@@ -354,7 +385,7 @@ workflow.add_conditional_edges(
 workflow.add_conditional_edges(
     "orchestrator",
     route_after_orchestrator,
-    {"web_search": "web_search", "retrieval": "retrieval"},
+    {"generation": "generation", "web_search": "web_search", "retrieval": "retrieval"},
 )
 workflow.add_conditional_edges(
     "web_search",

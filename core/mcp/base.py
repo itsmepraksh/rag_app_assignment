@@ -4,9 +4,15 @@ import os
 from typing import Any
 from urllib.error import URLError, HTTPError
 from urllib.request import Request, urlopen
+try:
+    from dotenv import load_dotenv
+except Exception:  # pragma: no cover - optional dependency fallback
+    def load_dotenv(*_args, **_kwargs):
+        return False
 
 logger = logging.getLogger(__name__)
 
+load_dotenv()
 
 MCP_ENABLED = os.getenv("MCP_ENABLED", "false").strip().lower() == "true"
 MCP_TIMEOUT_SECONDS = int(os.getenv("MCP_TIMEOUT_SECONDS", "8"))
